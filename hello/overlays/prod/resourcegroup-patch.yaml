@@ -1,0 +1,9 @@
+- op: replace #action 
+  path: /spec/forProvider/location #resource we want to change
+  value: germanywestcentral #value we want to use for patching
+- op: add #action 
+  path: /spec/forProvider/tags #resource we want to change
+  value:    #value we want to use for patching
+    environment: production 
+    owner: devops 
+    provisioner: crossplane-prd 
