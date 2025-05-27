@@ -1,0 +1,3 @@
+resources:
+  - hyappbase-rgd.yaml
+  - hywebapp-rgd.yaml 

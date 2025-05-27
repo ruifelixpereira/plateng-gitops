@@ -1,0 +1,114 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: hywebapp.kro.run
+spec:
+  schema:
+    apiVersion: v1alpha1
+    kind: HyWebApp
+    spec:
+      appName: string | required=true
+      namespace: string | default=default
+      location: string | required=true
+      imageName: string | required=true
+    status:
+      serviceIp: ${appService.status.loadBalancer.ingress[0].ip}
+  
+  resources:
+  # These are the pre-req K8s resources
+  - id: appNamespace
+    template:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: ${schema.spec.namespace}
+        labels:
+          name: ${schema.spec.namespace}
+  # Infrastructure base resources
+  - id: infra
+    template:
+      apiVersion: kro.run/v1alpha1
+      kind: HyAppBase
+      metadata:
+        name: ${schema.metadata.name}
+      spec:
+        appName: ${schema.spec.appName}
+        namespace: ${schema.spec.namespace}
+        location: ${schema.spec.location}
+  # Application resources
+  - id: appDeployment
+    template:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: app-front
+        namespace: ${schema.spec.namespace}
+      spec:
+        replicas: 1
+        selector:
+          matchLabels:
+            app: app-front
+        strategy:
+          rollingUpdate:
+            maxSurge: 1
+            maxUnavailable: 1
+        minReadySeconds: 5 
+        template:
+          metadata:
+            labels:
+              app: app-front
+          spec:
+            nodeSelector:
+              "kubernetes.io/os": linux
+            containers:
+            - name: app-front
+              image: ${schema.spec.imageName}
+              ports:
+              - containerPort: 5000
+              resources:
+                requests:
+                  cpu: 250m
+                limits:
+                  cpu: 500m
+              env:
+              - name: AZURE_STORAGE_ACCOUNT_NAME
+                value: ${schema.spec.appName}sa
+              - name: AZURE_STORAGE_ACCOUNT_AUTH_TYPE
+                value: HYBRID
+              - name: AZURE_STORAGE_ACCOUNT_ACCESS_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: ${schema.spec.appName}-ss 
+                    key: primarykey
+                    optional: false
+              - name: DBHOST
+                valueFrom:
+                  secretKeyRef:
+                    name: ${schema.spec.appName}-fqdn-ds 
+                    key: psqlfqdn
+                    optional: false
+              - name: DBNAME
+                value: ${schema.spec.appName}db
+              - name: DBUSER
+                value: myAdmin
+              - name: DBPWD
+                valueFrom:
+                  secretKeyRef:
+                    name: ${schema.spec.appName}-pwd-ds
+                    key: password
+                    optional: false
+  # App service
+  - id: appService
+    template:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: app-front
+        namespace: ${schema.spec.namespace}
+      spec:
+        type: LoadBalancer
+        ports:
+        - port: 80
+          targetPort: 5000
+        selector:
+          app: app-front

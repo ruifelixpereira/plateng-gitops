@@ -1,0 +1,136 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: hyappbase.kro.run
+spec:
+  schema:
+    apiVersion: v1alpha1
+    kind: HyAppBase
+    spec:
+      appName: string | required=true
+      namespace: string | default=default
+      location: string | required=true
+    status:
+      storageAccountId: ${storageAccount.status.id}
+  
+  resources:
+  # These are the pre-req K8s resources
+  #- id: appNamespace
+  #  template:
+  #    apiVersion: v1
+  #    kind: Namespace
+  #    metadata:
+  #      name: ${schema.spec.namespace}
+  #      labels:
+  #        name: ${schema.spec.namespace}
+  # These are the resources in Azure needed to run the Web app site
+  - id: resourcegroup
+    template:
+      apiVersion: resources.azure.com/v1api20200601
+      kind: ResourceGroup
+      metadata:
+        name: ${schema.spec.appName}-rg
+        namespace: ${schema.spec.namespace}
+      spec:
+        location: ${schema.spec.location}
+  # Storage
+  - id: storageAccount
+    template:
+      apiVersion: storage.azure.com/v1api20230101
+      kind: StorageAccount
+      metadata:
+        name: ${schema.spec.appName}sa
+        namespace: ${schema.spec.namespace}
+      spec:
+        location: ${schema.spec.location}
+        kind: StorageV2
+        sku:
+          name: Standard_LRS
+        owner:
+          name: ${resourcegroup.metadata.name}
+        accessTier: Hot
+        operatorSpec:
+          secrets:
+            key1:
+              name: ${schema.spec.appName}-ss
+              key: primarykey
+  - id: blobService
+    template:
+      apiVersion: storage.azure.com/v1api20230101
+      kind: StorageAccountsBlobService
+      metadata:
+        name: ${schema.spec.appName}bs
+        namespace: ${schema.spec.namespace}
+      spec:
+        owner:
+          name: ${storageAccount.metadata.name}
+  - id: container
+    template:
+      apiVersion: storage.azure.com/v1api20230101
+      kind: StorageAccountsBlobServicesContainer
+      metadata:
+        name: contents
+        namespace: ${schema.spec.namespace}
+      spec:
+        owner:
+          name: ${blobService.metadata.name}
+  # PostgreSQL database
+  - id: psqlSecret
+    template:  
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: ${schema.spec.appName}-pwd-ds
+        namespace: ${schema.spec.namespace}
+      type: Opaque
+      data:
+        password: "c29tZXRoaW5nVE9CRXJlcGxhY2VkMTIzCg==" # This is a base64 encoded password that will be replaced during deployment
+  - id: psqlFlexibleServer
+    template:  
+      apiVersion: dbforpostgresql.azure.com/v1api20240801
+      kind: FlexibleServer
+      metadata:
+        name: ${schema.spec.appName}-psql
+        namespace: ${schema.spec.namespace}
+      spec:
+        location: ${schema.spec.location}
+        owner:
+          name: ${resourcegroup.metadata.name}
+        version: "14"
+        sku:
+          name: Standard_B1ms
+          tier: Burstable
+        administratorLogin: myAdmin
+        administratorLoginPassword: # This is the name/key of a Kubernetes secret in the same namespace
+          name: ${schema.spec.appName}-pwd-ds
+          key: password
+        storage:
+          storageSizeGB: 32
+        operatorSpec:
+          secrets:
+            fullyQualifiedDomainName:
+              name: ${schema.spec.appName}-fqdn-ds
+              key: psqlfqdn
+  - id: psqlDatabase
+    template:  
+      apiVersion: dbforpostgresql.azure.com/v1api20240801
+      kind: FlexibleServersDatabase
+      metadata:
+        name: ${schema.spec.appName}db
+        namespace: ${schema.spec.namespace}
+      spec:
+        owner:
+          name: ${psqlFlexibleServer.metadata.name}
+        charset: utf8
+  - id: psqlFirewallRule
+    template:  
+      apiVersion: dbforpostgresql.azure.com/v1api20240801
+      kind: FlexibleServersFirewallRule
+      metadata:
+        name: allow-all
+        namespace: ${schema.spec.namespace}
+      spec:
+        owner:
+          name: ${psqlFlexibleServer.metadata.name}
+        startIpAddress: 0.0.0.0
+        endIpAddress: 255.255.255.255

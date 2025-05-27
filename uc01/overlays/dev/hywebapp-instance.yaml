@@ -1,0 +1,9 @@
+apiVersion: kro.run/v1alpha1
+kind: HyWebApp
+metadata:
+  name: app71
+spec:
+  appName: app71acd
+  namespace: rg71
+  location: westeurope
+  imageName: "acrrfp000.azurecr.io/pe-demo:1.0.1"
