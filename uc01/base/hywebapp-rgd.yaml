@@ -2,6 +2,8 @@ apiVersion: kro.run/v1alpha1
 kind: ResourceGraphDefinition
 metadata:
   name: hywebapp.kro.run
+  annotations:
+    plateng/description: test
 spec:
   schema:
     apiVersion: v1alpha1
